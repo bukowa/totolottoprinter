@@ -1,36 +1,184 @@
+import json
 import os
+import pathlib
+import sys
+from datetime import datetime, timezone, timedelta
+from time import sleep
 
 import requests
-import ifaddr
+import logging
 from escpos.printer import Usb
 
+logger = logging.getLogger(__name__)
 
-def print_ipaddress(_printer: Usb):
-    adapters = ifaddr.get_adapters()
+last_printed_path = pathlib.Path("last_printed.json")
 
-    for adapter in adapters:
-        if adapter.nice_name == 'wlan0':
-            for ip in adapter.ips:
-                if ip.is_IPv4:
-                    print(ip.ip)
-                    p.text(f"{ip.ip}\n")
 
-lotto_api = os.environ["LOTTO_API"]
-headers = {
-    "accept": "application/json",
-    "secret": lotto_api,
-    "User-Agent": "Mateusz Kurowski - aplikacja dla mojego dziadka"
-}
-url = "https://developers.lotto.pl/api/open/v1/lotteries/draw-results/last-results"
+def last_printed_file_exists():
+    if not last_printed_path.exists():
+        logger.warning("File doesn't exist!")
+        return False
+    return True
 
-data = requests.get(url, headers=headers)
-jdata = data.json()
-data.raise_for_status()
 
-p = Usb(
-    idVendor=0x0416,
-    idProduct=0x5011,
-    profile="NT-5890K",
-)
-print_ipaddress(p)
-print("Done")
+def read_lastprinted_file() -> dict:
+    if not last_printed_file_exists():
+        return {}
+    logger.info(f"Opening file: {last_printed_path}")
+    with last_printed_path.open("r") as _ff:
+        return json.loads(_ff.read())
+
+
+def save_lastprinted_file(_data: dict):
+    logger.info(f"Saving last printed file: {last_printed_path}")
+    with last_printed_path.open("w") as _ff:
+        json.dump(_data, _ff)
+
+
+class Api:
+
+    @property
+    def default_games(self):
+        return ["Lotto", "MiniLotto"]
+
+    @property
+    def api_key(self):
+        return os.environ["LOTTO_API"]
+
+    @property
+    def headers(self):
+        return {
+            "accept": "application/json",
+            "secret": self.api_key,
+            "User-Agent": "Mateusz Kurowski - aplikacja dla mojego dziadka"
+        }
+
+    def query_next_drawn_date(self, game: str):
+        _url = f"https://developers.lotto.pl/api/open/v1/lotteries/info?gameType={game}"
+        return requests.get(url=_url, headers=self.headers).json()
+
+    def last_result_for_game(self, game: str):
+        _url = f"https://developers.lotto.pl/api/open/v1/lotteries/draw-results/last-results-per-game?gameType={game}"
+        _result = requests.get(_url, headers=self.headers).json()
+        for r in _result:
+            if r['gameType'] == game:
+                break
+        _url2 = f"https://developers.lotto.pl/api/open/v1/lotteries/draw-prizes/{game}/{r['drawSystemId']}"
+        _result2 = requests.get(_url2, headers=self.headers).json()
+        for r2 in _result2:
+            if r2['gameType'] == game:
+                break
+
+        return {
+            "gameType": r2["gameType"],
+            "drawSystemId": r2["drawSystemId"],
+            "drawDate": r2['drawDate'],
+            "prizes": r2['prizes'],
+            "results": r['results'][0]['resultsJson']
+        }
+
+
+def prizes_to_text(_result):
+    """
+    Convert prizes based on the game.
+    """
+    _gt = _result['gameType']
+    _pr = _result['prizes']
+    if _gt == "Lotto":
+        return (
+            f"6: ilosc: {_pr['1']['prize']} nagroda: {_pr['1']['prizeValue']}\n"
+            f"5: ilosc: {_pr['2']['prize']} nagroda: {_pr['2']['prizeValue']}\n"
+            f"4: ilosc: {_pr['3']['prize']} nagroda: {_pr['3']['prizeValue']}\n"
+            f"3: ilosc: {_pr['4']['prize']} nagroda: {_pr['4']['prizeValue']}\n"
+        )
+    if _gt == "MiniLotto":
+        return (
+            f"5: ilosc: {_pr['1']['prize']} nagroda: {_pr['1']['prizeValue']}\n"
+            f"4: ilosc: {_pr['2']['prize']} nagroda: {_pr['2']['prizeValue']}\n"
+            f"3: ilosc: {_pr['3']['prize']} nagroda: {_pr['3']['prizeValue']}\n"
+        )
+    raise Exception(f"Unknown game: {_gt}")
+
+
+def text_for_result(_result: dict):
+    def _wynik(_stopien, _wynik):
+        return f"Stopie"
+
+    return (f"Gra: {_result['gameType']}\n"
+            f"Data: {datetime.fromisoformat(_result['drawDate']).astimezone(timezone(timedelta(hours=2)))}\n"
+            f"Liczby: {' '.join([str(x) for x in _result['results']])}\n"
+            f"Wyniki:\n{prizes_to_text(_result)}"
+            f"\n\n"
+            )
+
+
+def printer_print(_text: str, retry=10):
+    if not getattr(printer_print, "_p", None):
+        printer_print._p = Usb(
+            idVendor=0x0416,
+            idProduct=0x5011,
+            profile="NT-5890K",
+        )
+
+    _p = printer_print._p
+
+    logger.info("Trying to print...")
+    _p.text(_text)
+    logger.info("Print success... (probably)")
+
+# Lotto, EuroJackpot, MultiMulti, MiniLotto, Kaskada, Keno, EkstraPensja, EkstraPremia, Szybkie600, ZakladySpecjalne
+default_games = ["Lotto", "MiniLotto"]
+
+
+def main(games=None):
+    logger.info("Checking games arg")
+    if games is None:
+        if len(sys.argv) > 1:
+            games = sys.argv[1:]
+        else:
+            games = default_games
+
+    logger.info("Reading last printed file")
+    data = read_lastprinted_file()
+    for game in games:
+        if game not in data.keys():
+            data[game] = {
+                "nextDrawDate": None,
+                "lastPrintDate": None,
+            }
+    save_lastprinted_file(data)
+
+    api = Api()
+
+    while True:
+        try:
+
+            for game in games:
+                result = api.last_result_for_game(game)
+                if result['drawDate'] == data[game]['lastPrintDate']:
+                    logger.info(f"Already printed for {result}")
+                else:
+                    logger.info(f"Printing for {result}")
+                    printer_print(text_for_result(result))
+                    data[game]['lastPrintDate'] = result['drawDate']
+                    save_lastprinted_file(data)
+
+            logger.info("Sleeping for 30 minutes...")
+            sleep(60 * 30)
+
+        except requests.RequestException as exc:
+            logger.exception(exc)
+            logger.warning("http exception, sleeping for 60 sec...")
+            sleep(60)
+
+        except Exception as error:
+            # inform about errors to me?
+            logger.exception(error)
+            logger.error("something bad happened, sleeping for 60minutes")
+            sleep(60 * 60)
+
+
+if __name__ == '__main__':
+    logger.setLevel(logging.INFO)
+    logger.info(f"Startujemy na {sys.platform}")
+    main()

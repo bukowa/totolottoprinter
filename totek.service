@@ -1,0 +1,14 @@
+[Unit]
+Description=toto printer
+After=network.target
+
+[Service]
+ExecStart=/home/buk/toto1/venv/bin/python /home/buk/toto1/checkprint.py
+Restart=always
+User=buk
+WorkingDirectory=/home/buk/toto1
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/home/buk/toto1/.env
+
+[Install]
+WantedBy=multi-user.target
