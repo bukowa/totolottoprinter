@@ -9,6 +9,8 @@ User=buk
 WorkingDirectory=/home/buk/toto1
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=/home/buk/toto1/.env
+Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
