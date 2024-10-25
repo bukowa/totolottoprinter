@@ -2,7 +2,7 @@ import json
 import os
 import pathlib
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, UTC
 from time import sleep
 
 import requests
@@ -37,6 +37,20 @@ def save_lastprinted_file(_data: dict):
 
 class Api:
 
+    class ErrorNoResults(Exception):
+        """
+        Raised when API returned no results for given query.
+        """
+        def __init__(self, response, *args):
+            self.response = response
+            super().__init__(*args)
+
+    class ErrorDrawSystemIdIsNone(ErrorNoResults):
+        """
+        Raised when drawSystemId is `None` for give query.
+        Happens when prizes are not yet calculated on the server side (probably).
+        """
+
     @property
     def default_games(self):
         return ["Lotto", "MiniLotto"]
@@ -50,7 +64,7 @@ class Api:
         return {
             "accept": "application/json",
             "secret": self.api_key,
-            "User-Agent": "Mateusz Kurowski - aplikacja dla mojego dziadka"
+            "User-Agent": "https://github.com/bukowa/totolottoprinter"
         }
 
     def query_next_drawn_date(self, game: str):
@@ -59,22 +73,43 @@ class Api:
 
     def last_result_for_game(self, game: str):
         _url = f"https://developers.lotto.pl/api/open/v1/lotteries/draw-results/last-results-per-game?gameType={game}"
-        _result = requests.get(_url, headers=self.headers).json()
-        for r in _result:
-            if r['gameType'] == game:
+        _res1 = requests.get(_url, headers=self.headers)
+        _res1.raise_for_status()
+        _json1 = _res1.json()
+
+        if len(_json1) == 0:
+            raise Api.ErrorNoResults(_res1)
+
+        r1 = None
+        for r1 in _json1:
+            if r1['gameType'] == game:
                 break
-        _url2 = f"https://developers.lotto.pl/api/open/v1/lotteries/draw-prizes/{game}/{r['drawSystemId']}"
-        _result2 = requests.get(_url2, headers=self.headers).json()
-        for r2 in _result2:
+
+        if r1 is None:
+            raise Api.ErrorNoResults(_res1)
+
+        if r1['drawSystemId'] is None:
+            raise Api.ErrorDrawSystemIdIsNone(_res1)
+
+        _url2 = f"https://developers.lotto.pl/api/open/v1/lotteries/draw-prizes/{game}/{r1['drawSystemId']}"
+        _res2 = requests.get(_url2, headers=self.headers)
+        _res2.raise_for_status()
+        _json2 = _res2.json()
+
+        r2 = None
+        for r2 in _json2:
             if r2['gameType'] == game:
                 break
 
+        if r2 is None:
+            raise Api.ErrorNoResults(_res2)
+
         return {
+            "prizes": r2['prizes'],
+            "drawDate": r2['drawDate'],
             "gameType": r2["gameType"],
             "drawSystemId": r2["drawSystemId"],
-            "drawDate": r2['drawDate'],
-            "prizes": r2['prizes'],
-            "results": r['results'][0]['resultsJson']
+            "results": r1['results'][0]['resultsJson']
         }
 
 
@@ -126,6 +161,7 @@ def printer_print(_text: str, retry=10):
     _p.text(_text)
     logger.info("Print success... (probably)")
 
+
 # Lotto, EuroJackpot, MultiMulti, MiniLotto, Kaskada, Keno, EkstraPensja, EkstraPremia, Szybkie600, ZakladySpecjalne
 default_games = ["Lotto", "MiniLotto"]
 
@@ -163,19 +199,27 @@ def main(games=None):
                     data[game]['lastPrintDate'] = result['drawDate']
                     save_lastprinted_file(data)
 
-            logger.info("Sleeping for 30 minutes...")
-            sleep(60 * 30)
+            logger.info("Sleeping for 5 minutes...")
+            sleep(60 * 5)
+
+        except Api.ErrorNoResults:
+            logger.warning("No results, sleeping for 5 minutes...")
+            sleep(60 * 5)
+
+        except Api.ErrorDrawSystemIdIsNone:
+            logger.warning("DrawDawnId is None, sleeping for 5 minutes...")
+            sleep(60 * 5)
 
         except requests.RequestException as exc:
             logger.exception(exc)
-            logger.warning("http exception, sleeping for 60 sec...")
-            sleep(60)
+            logger.warning("http exception, sleeping for 5 minutes...")
+            sleep(60 * 5)
 
-        except Exception as error:
+        except Exception as exc:
             # inform about errors to me?
-            logger.exception(error)
-            logger.error("something bad happened, sleeping for 60minutes")
-            sleep(60 * 60)
+            logger.exception(exc)
+            logger.error("something bad happened, exit...")
+            exit(1)
 
 
 if __name__ == '__main__':
