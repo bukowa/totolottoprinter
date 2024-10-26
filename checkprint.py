@@ -109,7 +109,8 @@ class Api:
             "drawDate": r2['drawDate'],
             "gameType": r2["gameType"],
             "drawSystemId": r2["drawSystemId"],
-            "results": r1['results'][0]['resultsJson']
+            "results": r1['results'][0]['resultsJson'],
+            "specialResults": r1['results'][0]['specialResults'],
         }
 
 
@@ -132,19 +133,47 @@ def prizes_to_text(_result):
             f"4: ilosc: {_pr['2']['prize']} nagroda: {_pr['2']['prizeValue']}\n"
             f"3: ilosc: {_pr['3']['prize']} nagroda: {_pr['3']['prizeValue']}\n"
         )
+    if _gt == "LottoPlus":
+        return (
+            f"6: ilosc: {_pr['1']['prize']} nagroda: {_pr['1']['prizeValue']}\n"
+            f"5: ilosc: {_pr['2']['prize']} nagroda: {_pr['2']['prizeValue']}\n"
+            f"4: ilosc: {_pr['3']['prize']} nagroda: {_pr['3']['prizeValue']}\n"
+            f"3: ilosc: {_pr['4']['prize']} nagroda: {_pr['4']['prizeValue']}\n"
+        )
+    if _gt == "EuroJackpot":
+        return (
+            f"5+2: ilosc: {_pr['1']['prize']} nagroda:  {_pr['1']['prizeValue']}\n"
+            f"5+1: ilosc: {_pr['2']['prize']} nagroda:  {_pr['2']['prizeValue']}\n"
+            f"5+0: ilosc: {_pr['3']['prize']} nagroda:  {_pr['3']['prizeValue']}\n"
+            f"4+2: ilosc: {_pr['4']['prize']} nagroda:  {_pr['4']['prizeValue']}\n"
+            f"4+1: ilosc: {_pr['5']['prize']} nagroda:  {_pr['5']['prizeValue']}\n"
+            f"3+2: ilosc: {_pr['6']['prize']} nagroda:  {_pr['6']['prizeValue']}\n"
+            f"4+0: ilosc: {_pr['7']['prize']} nagroda:  {_pr['7']['prizeValue']}\n"
+            f"2+2: ilosc: {_pr['8']['prize']} nagroda:  {_pr['8']['prizeValue']}\n"
+            f"3+1: ilosc: {_pr['9']['prize']} nagroda:  {_pr['9']['prizeValue']}\n"
+            f"3+0: ilosc: {_pr['10']['prize']} nagroda: {_pr['10']['prizeValue']}\n"
+            f"1+2: ilosc: {_pr['11']['prize']} nagroda: {_pr['11']['prizeValue']}\n"
+            f"2+1: ilosc: {_pr['12']['prize']} nagroda: {_pr['12']['prizeValue']}\n"
+        )
     raise Exception(f"Unknown game: {_gt}")
 
 
 def text_for_result(_result: dict):
-    def _wynik(_stopien, _wynik):
-        return f"Stopie"
 
-    return (f"Gra: {_result['gameType']}\n"
-            f"Data: {datetime.fromisoformat(_result['drawDate']).astimezone(timezone(timedelta(hours=2)))}\n"
-            f"Liczby: {' '.join([str(x) for x in _result['results']])}\n"
-            f"Wyniki:\n{prizes_to_text(_result)}"
+    first = (f"Gra: {_result['gameType']}\n"
+             f"Data: {datetime.fromisoformat(_result['drawDate']).astimezone(timezone(timedelta(hours=2)))}\n"
+             f"Liczby: {' '.join([str(x) for x in _result['results']])}\n"
+             )
+
+    if len(_result['specialResults']) > 0:
+        first += (f"Liczby specjalne: {' '.join([str(x) for x in _result['specialResults']])}\n"
+                  )
+
+    last = (f"Wyniki:\n{prizes_to_text(_result)}"
             f"\n\n"
             )
+
+    return first + last
 
 
 def printer_print(_text: str, retry=10):
@@ -162,8 +191,8 @@ def printer_print(_text: str, retry=10):
     logger.info("Print success... (probably)")
 
 
-# Lotto, EuroJackpot, MultiMulti, MiniLotto, Kaskada, Keno, EkstraPensja, EkstraPremia, Szybkie600, ZakladySpecjalne
-default_games = ["Lotto", "MiniLotto"]
+# Lotto, LottoPlus, EuroJackpot, MultiMulti, MiniLotto, Kaskada, Keno, EkstraPensja, EkstraPremia, Szybkie600, ZakladySpecjalne
+default_games = ["Lotto", "LottoPlus", "MiniLotto", "EuroJackpot"]
 
 
 def main(games=None):
