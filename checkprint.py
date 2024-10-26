@@ -177,18 +177,16 @@ def text_for_result(_result: dict):
 
 
 def printer_print(_text: str, retry=10):
-    if not getattr(printer_print, "_p", None):
-        printer_print._p = Usb(
-            idVendor=0x0416,
-            idProduct=0x5011,
-            profile="NT-5890K",
-        )
-
-    _p = printer_print._p
-
+    _p = Usb(
+        idVendor=0x0416,
+        idProduct=0x5011,
+        profile="NT-5890K",
+    )
     logger.info("Trying to print...")
     _p.text(_text)
     logger.info("Print success... (probably)")
+    _p.close()
+    del _p
 
 
 # Lotto, LottoPlus, EuroJackpot, MultiMulti, MiniLotto, Kaskada, Keno, EkstraPensja, EkstraPremia, Szybkie600, ZakladySpecjalne
