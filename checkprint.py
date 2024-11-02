@@ -214,40 +214,38 @@ def main(games=None):
     api = Api()
 
     while True:
-        try:
+        for game in games:
+            logger.info(f"Checking for {game}")
 
-            for game in games:
+            try:
                 result = api.last_result_for_game(game)
+
                 if result['drawDate'] == data[game]['lastPrintDate']:
-                    logger.info(f"Already printed for {result}")
+                    logger.info(f"Already printed {game} for {result['drawDate']}")
                 else:
-                    logger.info(f"Printing for {result}")
+                    logger.info(f"Printing for {result['drawDate']}")
                     printer_print(text_for_result(result))
                     data[game]['lastPrintDate'] = result['drawDate']
                     save_lastprinted_file(data)
 
-            logger.info("Sleeping for 5 minutes...")
-            sleep(60 * 5)
+            except Api.ErrorNoResults:
+                logger.warning(f"No results for {game}")
 
-        except Api.ErrorNoResults:
-            logger.warning("No results, sleeping for 5 minutes...")
-            sleep(60 * 5)
+            except Api.ErrorDrawSystemIdIsNone:
+                logger.warning(f"DrawDawnId is None for {game}")
 
-        except Api.ErrorDrawSystemIdIsNone:
-            logger.warning("DrawDawnId is None, sleeping for 5 minutes...")
-            sleep(60 * 5)
+            except requests.RequestException as exc:
+                logger.exception(exc)
+                logger.warning(f"http exception for {game}")
 
-        except requests.RequestException as exc:
-            logger.exception(exc)
-            logger.warning("http exception, sleeping for 5 minutes...")
-            sleep(60 * 5)
+            except Exception as exc:
+                # inform about errors to me?
+                logger.exception(exc)
+                logger.error("something bad happened, exit...")
+                exit(1)
 
-        except Exception as exc:
-            # inform about errors to me?
-            logger.exception(exc)
-            logger.error("something bad happened, exit...")
-            exit(1)
-
+        logger.info("Sleeping for 5 minutes...")
+        sleep(60 * 5)
 
 if __name__ == '__main__':
     logger.setLevel(logging.INFO)
